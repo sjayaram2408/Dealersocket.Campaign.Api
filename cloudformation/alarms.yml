@@ -1,0 +1,51 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: This template creates some basic Cloudwatch alarms and the alerting process flow for said alarms
+
+Parameters:
+  LambdaAlarmTopic:
+    Type: String
+  LambdaErrorsAlarmName:
+    Type: String
+  LambdaFunctionName:
+    Type: String
+  SubscriptionEndpoint:
+    Type: String
+  SubscriptionProtocol:
+    Type: String
+
+Resources:
+### Sample alarm to monitor errors on Lambda
+  LambdaErrors:
+    Type: AWS::CloudWatch::Alarm
+    Properties: 
+      AlarmName: !Ref LambdaErrorsAlarmName
+      AlarmDescription: "Errors on Lambda function"
+      AlarmActions: 
+        - !Ref AlarmSnsTopic
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 5
+      DatapointsToAlarm: 3
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions: 
+        - Name: FunctionName
+          Value: !Ref LambdaFunctionName
+      OKActions: 
+        - !Ref AlarmSnsTopic
+
+  AlarmSnsTopic:
+    Type: AWS::SNS::Topic
+    Properties: 
+      DisplayName: !Ref LambdaAlarmTopic
+      TopicName: !Ref LambdaAlarmTopic
+
+  AlarmTopicSubscription:
+    Type: AWS::SNS::Subscription
+    Properties: 
+      Endpoint: !Ref SubscriptionEndpoint
+      Protocol: !Ref SubscriptionProtocol
+      TopicArn: !Ref AlarmSnsTopic

@@ -1,0 +1,88 @@
+image:
+  name: dealersocket-docker.jfrog.io/dockerfiles.bitbucketpipelines/package:latest
+  username: $ARTIFACTORY_USERNAME
+  password: $ARTIFACTORY_APIKEY
+
+clone:
+  depth: full
+
+pipelines:
+  custom:
+    pipeline-setup:
+      - step: &pipeline-setup
+          name: Setup
+          script:
+            - ds-setup
+          artifacts:
+            - ds-package-utils/**
+    build-test-dev:
+      - step: &build-test-dev
+          name: Build & Test Dev
+          image: mcr.microsoft.com/dotnet/core/sdk:2.2
+          caches:
+            - dotnetcore
+          script:
+            - source ds-package-utils/ds-initialize.sh
+
+            - apt-get update && apt-get install --yes --force-yes openjdk-8-jre
+            - export PATH="$PATH:/root/.dotnet/tools"
+            - dotnet tool install --global dotnet-sonarscanner
+
+            - dotnet sonarscanner begin /k:Dealersocket.Campaign.Api-${BITBUCKET_BRANCH////.} /v:$PACKAGE_VERSION /d:sonar.host.url=${SONARQUBE_URL} /d:sonar.login=${SONARQUBE_TOKEN} /d:sonar.exclusions="**/bin/**/*,**/obj/**/*" /d:sonar.cs.opencover.reportsPaths="coverage.opencover.xml" /d:sonar.cs.vstest.reportsPaths="results*.trx"
+
+            - BUILD_CONFIGURATION="Release"
+            - dotnet test -l "trx;LogFileName=../../../results.trx" /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=../../
+            - dotnet test -l "junit;LogFilePath=../../test-reports/results.xml" --no-build
+
+            - dotnet sonarscanner end /d:sonar.login=${SONARQUBE_TOKEN}
+            - curl -u "${SONARQUBE_TOKEN}:" -X POST "${SONARQUBE_URL}/api/project_tags/set?tags=deleteweekly,crm&project=Dealersocket.Campaign.Api-${BITBUCKET_BRANCH////.}"
+
+            - dotnet publish src/Dealersocket.Campaign.Api/Dealersocket.Campaign.Api.csproj --output ../../build/Dealersocket.Campaign.Api --configuration $BUILD_CONFIGURATION --version-suffix=$PACKAGE_VERSION
+
+            - mkdir build/Dealersocket.Campaign.Api.CloudFormation
+            - cp -R cloudformation/* build/Dealersocket.Campaign.Api.CloudFormation
+          artifacts:
+            - build/**
+    build-test-stable:
+      - step: &build-test-stable
+          name: Build & Test Stable
+          image: mcr.microsoft.com/dotnet/core/sdk:2.2
+          script:
+            - source ds-package-utils/ds-initialize.sh
+
+            - apt-get update && apt-get install --yes --force-yes openjdk-8-jre
+            - export PATH="$PATH:/root/.dotnet/tools"
+            - dotnet tool install --global dotnet-sonarscanner
+
+            - dotnet sonarscanner begin /k:Dealersocket.Campaign.Api /v:$PACKAGE_VERSION /d:sonar.host.url=${SONARQUBE_URL} /d:sonar.login=${SONARQUBE_TOKEN} /d:sonar.exclusions="**/bin/**/*,**/obj/**/*" /d:sonar.cs.opencover.reportsPaths="coverage.opencover.xml" /d:sonar.cs.vstest.reportsPaths="results*.trx"
+
+            - BUILD_CONFIGURATION="Release"
+            - dotnet test -l "trx;LogFileName=../../../results.trx" /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=../../
+            - dotnet test -l "junit;LogFilePath=../../test-reports/results.xml" --no-build
+
+            - dotnet sonarscanner end /d:sonar.login=${SONARQUBE_TOKEN}
+
+            - dotnet publish src/Dealersocket.Campaign.Api/Dealersocket.Campaign.Api.csproj --output ../../build/Dealersocket.Campaign.Api --configuration $BUILD_CONFIGURATION --version-suffix=$PACKAGE_VERSION
+
+            - mkdir build/Dealersocket.Campaign.Api.CloudFormation
+            - cp -R cloudformation/* build/Dealersocket.Campaign.Api.CloudFormation
+          artifacts:
+            - build/**
+    package:
+      - step: &package
+          name: Package
+          script:
+            - package_name="Dealersocket.Campaign.Api"
+            - package_version="$(ds-get-package-version)"
+            - ds-create-and-store-nupkgs-in-artifactory-from-child-folders ./build $package_version .
+            - ds-octopus-create-release Projects-1811 $package_name $package_version
+
+  branches:
+    "{master,hotfix/**}":
+      - step: *pipeline-setup
+      - step: *build-test-stable
+      - step: *package
+    '**':
+      - step: *pipeline-setup
+      - step: *build-test-dev
+      - step: *package

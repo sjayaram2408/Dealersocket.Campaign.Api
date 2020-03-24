@@ -1,0 +1,65 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: This master template uses child stacks to create a rest api using API Gateway backed by a Lambda function.
+
+Parameters:
+  LambdaCodeS3Bucket:
+    Type: String
+  LambdaCodeZipFileName:
+    Type: String
+  LambdaFunctionName:
+    Type: String
+  S3BucketName:
+    Type: String
+  SubscriptionEndpoint:
+    Type: String
+  SubscriptionProtocol:
+    Type: String
+  TagDivision:
+    Type: String
+  TagEnvironment:
+    Type: String
+  TagProduct:
+    Type: String
+  TagTeam:
+    Type: String
+
+Resources:
+  LambdaApi:
+    Type: AWS::CloudFormation::Stack
+    Properties: 
+      Parameters: 
+        LambdaFunctionName: !Ref LambdaFunctionName
+        LambdaCodeS3Bucket: !Ref LambdaCodeS3Bucket
+        LambdaCodeZipFileName: !Ref LambdaCodeZipFileName
+        LambdaIamRoleName: !Sub ${TagProduct}-${TagEnvironment}-LambdaFunctionRole
+      Tags: 
+        - Key: Division
+          Value: !Ref TagDivision
+        - Key: Product
+          Value: !Ref TagProduct
+        - Key: Environment
+          Value: !Ref TagEnvironment
+        - Key: Team
+          Value: !Ref TagTeam
+      TemplateURL: !Sub "https://s3.${AWS::Region}.amazonaws.com/${S3BucketName}/LambdaApi.yml"
+
+  Alarms:
+    Type: AWS::CloudFormation::Stack
+    Properties: 
+      Parameters: 
+        LambdaAlarmTopic: !Sub "${TagProduct}-AlarmTopic"
+        LambdaErrorsAlarmName: !Sub "${TagProduct}-${TagEnvironment}-LambdaError"
+        LambdaFunctionName: !GetAtt LambdaApi.Outputs.LambdaFunctionName
+        SubscriptionEndpoint: !Ref SubscriptionEndpoint
+        SubscriptionProtocol: !Ref SubscriptionProtocol
+      Tags: 
+        - Key: Division
+          Value: !Ref TagDivision
+        - Key: Product
+          Value: !Ref TagProduct
+        - Key: Environment
+          Value: !Ref TagEnvironment
+        - Key: Team
+          Value: !Ref TagTeam
+      TemplateURL: !Sub "https://s3.${AWS::Region}.amazonaws.com/${S3BucketName}/alarms.yml"

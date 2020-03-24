@@ -1,0 +1,26 @@
+﻿{
+  "Serilog": {
+    "MinimumLevel": {
+      "Default": "Debug",
+      "Override": {
+        "Microsoft": "Warning",
+        "System": "Warning"
+      }
+    }
+  },
+  "Application": {
+    "Authentication": {
+      "Authority": "https://sso.local.dealersocket.com"
+    },
+    "Cors": {
+      "AllowedOrigins": [
+        "https://admin.local.dealersocket.com",
+        "https://swagger.local.dealersocket.com"
+      ]
+    },
+    "Swagger": {
+      "DocumentTitle": "SSO API",
+      "DocumentVersion": "v1"
+    }
+  }
+}

@@ -1,0 +1,58 @@
+[
+  {
+    "ParameterKey": "ACMArn",
+    "ParameterValue": "#{Aws.CertificateManager.CertArn}"
+  },
+  {
+    "ParameterKey": "ApiDomainName",
+    "ParameterValue": "#{Global.Dealersocket.Campaign.Api.Url}"
+  },
+  {
+    "ParameterKey": "CORSAllowedOrigins",
+    "ParameterValue": "#{Dealersocket.Campaign.Api.CorsAllowedOrigins}"
+  },
+  {
+    "ParameterKey": "IsProduction",
+    "ParameterValue": "#{Environment.IsProduction}"
+  },
+  {
+    "ParameterKey": "LambdaCodeS3Bucket",
+    "ParameterValue": "#{Lambda.S3bucket.Name}"
+  },
+  {
+    "ParameterKey": "LambdaCodeZipFileName",
+    "ParameterValue": "#{Lambda.Zip.Name}"
+  },
+  {
+    "ParameterKey": "LambdaFunctionName",
+    "ParameterValue": "#{Lambda.Name}"
+  },
+  {
+    "ParameterKey": "R53HostedZoneId",
+    "ParameterValue": "#{Aws.Route53.ZoneId}"
+  },
+  {
+    "ParameterKey": "S3BucketName",
+    "ParameterValue": "#{Step.S3bucket}"
+  },
+  {
+    "ParameterKey": "SSOAuthority",
+    "ParameterValue": "#{DealerSocket.Sso.Url}"
+  },
+  {
+    "ParameterKey": "TagDivision",
+    "ParameterValue": "#{Tag.Division}"
+  },
+  {
+    "ParameterKey": "TagEnvironment",
+    "ParameterValue": "#{Tag.Environment}"
+  },
+  {
+    "ParameterKey": "TagProduct",
+    "ParameterValue": "#{Tag.Product}"
+  },
+  {
+    "ParameterKey": "TagTeam",
+    "ParameterValue": "#{Tag.Team}"
+  }
+]

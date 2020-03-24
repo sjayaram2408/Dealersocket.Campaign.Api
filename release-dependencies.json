@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "Deployment.Scripts.OctopusSteps": "latest",
+    "Deployment.Scripts.Powershell": "latest"
+  }
+}

@@ -1,0 +1,214 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: A DealerSocket API using the ASP.NET Core framework running in Amazon Lambda.
+
+Parameters:
+  ACMArn:
+    Type: String
+  ApiDomainName:
+    Type: String
+  CORSAllowedOrigins:
+    Type: String
+  IsProduction:
+    Type: String
+    AllowedValues: ["true", "false"]
+  LambdaFunctionName:
+    Type: String
+  LambdaCodeS3Bucket:
+    Type: String
+  LambdaCodeZipFileName:
+    Type: String
+  LambdaIamRoleName:
+    Type: String
+  R53HostedZoneId:
+    Type: String
+  SSOAuthority:
+    Type: String
+  TagDivision:
+    Type: String
+  TagProduct:
+    Type: String
+  TagEnvironment:
+    Type: String
+
+Conditions:
+  CreateDNSEntry: !Equals 
+    - !Ref IsProduction
+    - 'false'
+  IsProduction: !Equals 
+    - !Ref IsProduction
+    - 'true'
+
+Resources:
+  LambdaApi:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Ref LambdaFunctionName
+      Code:
+        S3Bucket: !Ref LambdaCodeS3Bucket
+        S3Key: !Ref LambdaCodeZipFileName
+      Description: >-
+        An DealerSocket AWS Lambda API
+      Environment:
+        Variables:
+          ASPNETCORE_ENVIRONMENT: !If [IsProduction, Production, Development]
+          Application__Authentication__Authority: !Ref SSOAuthority
+          Application__Cors__AllowedOriginsString: !Ref CORSAllowedOrigins
+      Handler: 'Dealersocket.Campaign.Api::Dealersocket.Campaign.Api.LambdaEntryPoint::FunctionHandlerAsync'
+      MemorySize: 512
+      Role: !GetAtt 
+        - LambdaApiRole
+        - Arn
+      Runtime: dotnetcore2.1
+      Timeout: 30
+
+  LambdaApiRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Ref LambdaIamRoleName
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+ 
+  LambdaApiRestApi:
+    Type: 'AWS::ApiGateway::RestApi'
+    Properties:
+      Name: !Join 
+        - ''
+        - - !Ref LambdaFunctionName
+          - RestApi
+
+  LambdaApiProxyResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref LambdaApiRestApi
+      ParentId: !GetAtt 
+        - LambdaApiRestApi
+        - RootResourceId
+      PathPart: '{proxy+}'
+
+  LambdaApiProxyResourceANY:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      RestApiId: !Ref LambdaApiRestApi
+      ResourceId: !Ref LambdaApiProxyResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub >-
+          arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaApi.Arn}/invocations
+
+  LambdaApiRestApiDeployment:
+    Type: 'AWS::ApiGateway::Deployment'
+    DependsOn: LambdaApiProxyResourceANY
+    Properties:
+      RestApiId: !Ref LambdaApiRestApi
+      StageName: Prod
+
+  LambdaApiCustomDomainName:
+    Type: 'AWS::ApiGateway::DomainName'
+    DependsOn: LambdaApiRestApiDeployment
+    Properties:
+      CertificateArn: !Ref ACMArn
+      DomainName: !Ref ApiDomainName
+
+  LambdaApiBasePathMapping:
+    Type: 'AWS::ApiGateway::BasePathMapping'
+    DependsOn: LambdaApiCustomDomainName
+    Properties:
+      DomainName: !Ref ApiDomainName
+      RestApiId: !Ref LambdaApiRestApi
+      Stage: Prod
+
+  LambdaApiInvokePermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      FunctionName: !GetAtt 
+        - LambdaApi
+        - Arn
+      Action: 'lambda:invokeFunction'
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub >-
+        arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LambdaApiRestApi}/*/*/*
+
+  LambdaApiDNS:
+    Type: 'AWS::Route53::RecordSetGroup'
+    Condition: CreateDNSEntry
+    DependsOn: LambdaApiCustomDomainName
+    Properties:
+      HostedZoneId: !Ref R53HostedZoneId
+      RecordSets:
+        - Name: !Ref ApiDomainName
+          Type: A
+          AliasTarget:
+            HostedZoneId: Z2FDTNDATAQYW2
+            DNSName: !GetAtt 
+              - LambdaApiCustomDomainName
+              - DistributionDomainName
+
+  KinesisStream:
+    Type: AWS::Kinesis::Stream
+    Properties: 
+      Name: !Sub ${TagProduct}-${TagEnvironment}-KStream
+      RetentionPeriodHours: 24
+      ShardCount: 1
+      Tags:
+        - Key: "Division"
+          Value: !Ref TagDivision
+        - Key: "Product"
+          Value: !Ref TagProduct
+        - Key: "Environment"
+          Value: !Ref TagEnvironment
+
+  KinesisStreamIamRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${TagProduct}-${TagEnvironment}-KStreamRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "logs.us-east-1.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+
+  KinesisStreamIamPermissions:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${TagProduct}-${TagEnvironment}-KStreamPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action: "kinesis:PutRecord"
+            Resource: !GetAtt KinesisStream.Arn
+          - Effect: "Allow"
+            Action: "iam:PassRole"
+            Resource: !GetAtt KinesisStream.Arn
+      Roles:
+        - !Ref KinesisStreamIamRole
+        
+  MicroServiceLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${LambdaFunctionName}
+      RetentionInDays: 30      
+
+  SubscriptionFilter:
+    Type: AWS::Logs::SubscriptionFilter
+    Properties:
+      DestinationArn: !GetAtt KinesisStream.Arn
+      FilterPattern: ""
+      LogGroupName: !Sub /aws/lambda/${LambdaFunctionName}
+      RoleArn: !GetAtt KinesisStreamIamRole.Arn
